@@ -10,23 +10,51 @@ const Index = () => {
   const [chatMessages, setChatMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [userInput, setUserInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!userInput.trim()) return;
 
     const newUserMessage = { role: 'user', content: userInput };
     setChatMessages((prev) => [...prev, newUserMessage]);
     setUserInput('');
     setIsTyping(true);
+    setError('');
 
-    setTimeout(() => {
+    try {
+      const response = await fetch('https://functions.poehali.dev/20c053d8-46c6-401a-9639-5668bfc13169', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...chatMessages, newUserMessage],
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка при получении ответа');
+      }
+
       const botResponse = {
         role: 'assistant',
-        content: 'Это демо-ответ от GPT. Подключите свой API ключ для полноценной работы! 🚀',
+        content: data.message,
       };
       setChatMessages((prev) => [...prev, botResponse]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Произошла ошибка');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '❌ Не удалось получить ответ. Проверьте, что API ключ OpenAI добавлен в настройках проекта.',
+        },
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   return (
