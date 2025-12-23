@@ -6,8 +6,8 @@ import urllib.error
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
-    Обработка запросов к GPT API для чата
-    Принимает массив сообщений и возвращает ответ от GPT
+    Обработка запросов к GPT API для чата.
+    Принимает массив сообщений и возвращает ответ от GPT.
     '''
     method: str = event.get('httpMethod', 'GET')
     
