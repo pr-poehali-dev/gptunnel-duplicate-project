@@ -6,8 +6,8 @@ import urllib.error
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
-    Обработка запросов к GPT API для чата.
-    Принимает массив сообщений и возвращает ответ от GPT.
+    Обработка запросов к YandexGPT API для чата.
+    Принимает массив сообщений и возвращает ответ от YandexGPT.
     '''
     method: str = event.get('httpMethod', 'GET')
     
@@ -35,15 +35,17 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'isBase64Encoded': False
         }
     
-    api_key = os.environ.get('OPENAI_API_KEY')
-    if not api_key:
+    api_key = os.environ.get('YANDEX_API_KEY')
+    folder_id = os.environ.get('YANDEX_FOLDER_ID')
+    
+    if not api_key or not folder_id:
         return {
             'statusCode': 500,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
                 'Content-Type': 'application/json'
             },
-            'body': json.dumps({'error': 'OpenAI API key not configured'}),
+            'body': json.dumps({'error': 'Yandex API credentials not configured'}),
             'isBase64Encoded': False
         }
     
@@ -62,27 +64,44 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'isBase64Encoded': False
             }
         
-        openai_request = {
-            'model': 'gpt-4',
-            'messages': messages,
-            'temperature': 0.7,
-            'max_tokens': 1000
+        yandex_messages = []
+        for msg in messages:
+            yandex_messages.append({
+                'role': msg['role'],
+                'text': msg['content']
+            })
+        
+        yandex_request = {
+            'modelUri': f'gpt://{folder_id}/yandexgpt-lite',
+            'completionOptions': {
+                'stream': False,
+                'temperature': 0.6,
+                'maxTokens': 2000
+            },
+            'messages': yandex_messages
         }
         
         req = urllib.request.Request(
-            'https://api.openai.com/v1/chat/completions',
-            data=json.dumps(openai_request).encode('utf-8'),
+            'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
+            data=json.dumps(yandex_request).encode('utf-8'),
             headers={
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json'
+                'Authorization': f'Api-Key {api_key}',
+                'Content-Type': 'application/json',
+                'x-folder-id': folder_id
             },
             method='POST'
         )
         
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=60) as response:
             response_data = json.loads(response.read().decode('utf-8'))
             
-            assistant_message = response_data['choices'][0]['message']['content']
+            result = response_data.get('result', {})
+            alternatives = result.get('alternatives', [])
+            
+            if not alternatives:
+                raise ValueError('No response from YandexGPT')
+            
+            assistant_message = alternatives[0]['message']['text']
             
             return {
                 'statusCode': 200,
@@ -92,15 +111,19 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 },
                 'body': json.dumps({
                     'message': assistant_message,
-                    'model': response_data.get('model', 'gpt-4'),
-                    'usage': response_data.get('usage', {})
+                    'model': 'yandexgpt-lite',
+                    'usage': result.get('usage', {})
                 }),
                 'isBase64Encoded': False
             }
     
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
-        error_data = json.loads(error_body) if error_body else {}
+        try:
+            error_data = json.loads(error_body)
+            error_message = error_data.get('message', 'Yandex API error')
+        except:
+            error_message = f'HTTP {e.code}: {error_body[:200]}'
         
         return {
             'statusCode': e.code,
@@ -109,8 +132,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'Content-Type': 'application/json'
             },
             'body': json.dumps({
-                'error': error_data.get('error', {}).get('message', 'OpenAI API error'),
-                'type': error_data.get('error', {}).get('type', 'api_error')
+                'error': error_message,
+                'type': 'api_error'
             }),
             'isBase64Encoded': False
         }
